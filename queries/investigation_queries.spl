@@ -1,0 +1,226 @@
+# Consultas SPL — Laboratorio SOC L1 con Splunk Enterprise
+
+**Proyecto:** Laboratorio SOC L1 con Splunk Enterprise  
+**Caso de uso:** Investigación de posibles credenciales comprometidas  
+**Nivel:** Principiante  
+**Fuente de datos:** `auth_events.csv`  
+**Tipo de datos:** Sintéticos, con fines educativos  
+**Plataforma:** Splunk Enterprise
+
+---
+
+## 1. Validación del volumen de eventos
+
+**Objetivo:** comprobar el número total de eventos y contar los intentos fallidos y exitosos de autenticación.
+
+```spl
+source="auth_events.csv" host="FoxCom" sourcetype="csv"
+| stats count(eval(action="failure")) AS fallos
+        count(eval(action="success")) AS exitosos
+```
+
+**Resultado obtenido:**
+- Eventos totales: 20.
+- Fallos de autenticación: 10.
+- Accesos exitosos: 10.
+
+**Interpretación:** los datos se han cargado y permiten distinguir entre autenticaciones fallidas y exitosas.
+
+---
+
+## 2. Inspección de los primeros cinco eventos
+
+**Objetivo:** comprobar que los campos principales se extraen correctamente antes de iniciar la investigación.
+
+```spl
+source="auth_events.csv" host="FoxCom" sourcetype="csv"
+| head 5
+| table _time event_time user src_ip action host extracted_host event_type
+```
+
+**Resultado obtenido:** cinco eventos con los campos de tiempo, usuario, IP de origen, acción, host y tipo de evento.
+
+**Interpretación:** esta comprobación permite validar la estructura de los registros y diferenciar el host de Splunk (`host`) del equipo registrado en el evento (`extracted_host`).
+
+---
+
+## 3. Identificación de usuarios con intentos fallidos
+
+**Objetivo:** identificar las cuentas con más fallos de autenticación y consultar las IP de origen y los equipos asociados.
+
+```spl
+source="auth_events.csv" host="FoxCom" sourcetype="csv" action="failure"
+| stats count AS intentos_fallidos
+        values(src_ip) AS ips_origen
+        values(extracted_host) AS equipos
+        by user
+| sort - intentos_fallidos
+```
+
+**Resultado obtenido:**
+
+| Usuario | Intentos fallidos | IP de origen | Equipo |
+|---|---:|---|---|
+| admin | 7 | 203.0.113.50 | DC01 |
+| backup | 2 | 192.168.1.10 | FILE01 |
+| maria | 1 | 192.168.1.20 | WS-01 |
+
+**Interpretación:** la cuenta `admin` concentra la mayoría de los fallos y requiere una revisión prioritaria.
+
+---
+
+## 4. Revisión de los accesos exitosos
+
+**Objetivo:** consultar los eventos de autenticación exitosa y revisar qué usuarios, IP y equipos aparecen en los registros.
+
+```spl
+source="auth_events.csv" host="FoxCom" sourcetype="csv" action="success"
+| table _time user src_ip extracted_host event_type
+| sort _time
+```
+
+**Resultado obtenido:** diez eventos de autenticación exitosa.
+
+**Interpretación:** esta consulta permite contrastar los accesos exitosos con los intentos fallidos y buscar secuencias que merezcan investigación.
+
+---
+
+## 5. Cronología de autenticación de la cuenta admin
+
+**Objetivo:** reconstruir la secuencia temporal de los eventos asociados a la cuenta administrativa.
+
+```spl
+source="auth_events.csv" host="FoxCom" sourcetype="csv" user="admin"
+| table _time user action src_ip extracted_host event_type
+| sort _time
+```
+
+**Resultado obtenido:** ocho eventos asociados a `admin`:
+- Cinco fallos entre las 10:05:00 y las 10:05:40.
+- Un acceso exitoso a las 10:06:00.
+- Dos fallos posteriores, a las 10:12:00 y a las 10:21:00.
+
+Los eventos mostraron la IP `203.0.113.50` y el equipo `DC01`.
+
+**Interpretación:** cinco fallos seguidos de un acceso exitoso constituyen un patrón que merece investigación, aunque por sí solo no confirma una intrusión.
+
+---
+
+## 6. Fallos acumulados antes del acceso exitoso
+
+**Objetivo:** determinar cuántos intentos fallidos se habían observado cuando se produjo el acceso exitoso de `admin`.
+
+```spl
+source="auth_events.csv" host="FoxCom" sourcetype="csv" user="admin"
+| eval orden=if(action="failure",1,2)
+| sort 0 _time
+| streamstats count(eval(action="failure")) AS fallos_acumulados
+| where action="success"
+| table _time user src_ip extracted_host fallos_acumulados
+```
+
+**Resultado obtenido:** un acceso exitoso a las 10:06:00 con `fallos_acumulados=5`.
+
+**Interpretación:** el registro exitoso aparece después de cinco fallos de autenticación. El campo auxiliar `orden` se conserva para reflejar la consulta ejecutada durante el laboratorio, aunque no interviene en el cálculo.
+
+---
+
+## 7. Resumen de accesos exitosos de admin
+
+**Objetivo:** resumir el número de accesos exitosos de la cuenta, el primer y último acceso registrado y sus IP y equipos asociados.
+
+```spl
+source="auth_events.csv" host="FoxCom" sourcetype="csv" user="admin" action="success"
+| stats count AS accesos_exitosos
+        earliest(_time) AS primer_acceso
+        latest(_time) AS ultimo_acceso
+        values(src_ip) AS ips_origen
+        values(extracted_host) AS equipos
+| convert ctime(primer_acceso) ctime(ultimo_acceso)
+```
+
+**Resultado obtenido:**
+- Accesos exitosos: 1.
+- Primer y último acceso: 10 de octubre de 2026, a las 10:06:00.
+- IP de origen: `203.0.113.50`.
+- Equipo: `DC01`.
+
+**Interpretación:** se encontró un acceso exitoso en el conjunto analizado. La legitimidad de ese acceso no puede determinarse únicamente con estos datos sintéticos.
+
+---
+
+# Consultas utilizadas en el dashboard
+
+## 8. Panel 1 — Autenticaciones fallidas frente a exitosas
+
+**Objetivo:** comparar el volumen de ambas categorías de autenticación.
+
+```spl
+source="auth_events.csv" host="FoxCom" sourcetype="csv"
+| stats count by action
+```
+
+**Resultado esperado:** dos categorías: `failure` y `success`, con diez eventos cada una.
+
+## 9. Panel 2 — Fallos de autenticación por usuario
+
+**Objetivo:** visualizar qué cuentas concentran los intentos fallidos.
+
+```spl
+source="auth_events.csv" host="FoxCom" sourcetype="csv" action="failure"
+| stats count AS intentos_fallidos by user
+| sort - intentos_fallidos
+```
+
+**Resultado esperado:** `admin` = 7, `backup` = 2 y `maria` = 1.
+
+## 10. Panel 3 — Cronología de autenticación de admin
+
+**Objetivo:** representar los fallos y accesos exitosos de la cuenta a lo largo del tiempo, agrupados en intervalos de un minuto.
+
+```spl
+source="auth_events.csv" host="FoxCom" sourcetype="csv" user="admin"
+| timechart span=1m count by action
+```
+
+**Resultado esperado:** una serie temporal que muestra cinco fallos a las 10:05, un acceso exitoso a las 10:06 y fallos posteriores a las 10:12 y 10:21.
+
+## 11. Panel 4 — Fallos acumulados antes del acceso exitoso
+
+**Objetivo:** mostrar el acceso exitoso de la cuenta `admin` y el número de intentos fallidos acumulados hasta ese momento, incluyendo la IP de origen y el equipo asociado.
+
+```spl
+source="auth_events.csv" host="FoxCom" sourcetype="csv" user="admin"
+| eval orden=if(action="failure",1,2)
+| sort 0 _time
+| streamstats count(eval(action="failure")) AS fallos_acumulados
+| where action="success"
+| table _time user src_ip extracted_host fallos_acumulados
+```
+
+**Resultado obtenido:**
+
+- Fecha y hora: 10 de octubre de 2026, 10:06:00.
+- Usuario: `admin`.
+- IP de origen: `203.0.113.50`.
+- Equipo: `DC01`.
+- Fallos acumulados: `5`.
+
+**Interpretación:** el acceso exitoso aparece después de cinco intentos fallidos en la secuencia temporal analizada. Este patrón justifica una investigación adicional, pero no demuestra por sí solo que las credenciales estuvieran comprometidas.
+
+**Nota técnica:** la variable `orden` se calcula en la consulta, pero no se utiliza en las operaciones posteriores. Se conserva para reflejar la consulta original ejecutada en el laboratorio.
+
+## Consideraciones técnicas y limitaciones
+
+- Todas las consultas se ejecutaron contra el conjunto de eventos sintéticos `auth_events.csv`.
+- `host="FoxCom"` identifica el host registrado por Splunk para los eventos importados; `extracted_host` representa el equipo mencionado en cada registro.
+- La dirección `203.0.113.50` pertenece a un rango reservado para documentación y no debe interpretarse como la IP real de un atacante.
+- Los resultados describen el conjunto de datos del laboratorio; no constituyen evidencia de una intrusión real.
+- En un entorno SOC real, se deben validar el contexto del usuario, la legitimidad del acceso, la actividad posterior y las políticas internas de escalamiento.
+- Las consultas se han documentado para facilitar su revisión y reproducción con el mismo conjunto de datos.
+
+## Conclusión
+
+Este conjunto de consultas permite validar los datos importados, identificar cuentas con múltiples fallos, reconstruir una cronología, relacionar intentos fallidos con accesos exitosos y visualizar los principales resultados mediante un dashboard.
+
+El laboratorio demuestra un flujo introductorio de análisis con SPL y documentación de evidencias, sin afirmar que se haya confirmado un compromiso de credenciales.
