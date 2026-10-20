@@ -1,0 +1,21 @@
+event_time,user,src_ip,action,host,event_type
+2026-10-10 10:00:00,maria,192.168.1.20,success,WS-01,login
+2026-10-10 10:01:00,carlos,192.168.1.21,success,WS-02,login
+2026-10-10 10:02:00,maria,192.168.1.20,failure,WS-01,login
+2026-10-10 10:03:00,maria,192.168.1.20,success,WS-01,login
+2026-10-10 10:05:00,admin,203.0.113.50,failure,DC01,login
+2026-10-10 10:05:10,admin,203.0.113.50,failure,DC01,login
+2026-10-10 10:05:20,admin,203.0.113.50,failure,DC01,login
+2026-10-10 10:05:30,admin,203.0.113.50,failure,DC01,login
+2026-10-10 10:05:40,admin,203.0.113.50,failure,DC01,login
+2026-10-10 10:06:00,admin,203.0.113.50,success,DC01,login
+2026-10-10 10:10:00,juan,192.168.1.30,success,WS-03,login
+2026-10-10 10:11:00,sofia,192.168.1.31,success,WS-04,login
+2026-10-10 10:12:00,admin,203.0.113.50,failure,DC01,login
+2026-10-10 10:13:00,sofia,192.168.1.31,success,WS-04,login
+2026-10-10 10:15:00,backup,192.168.1.10,failure,FILE01,login
+2026-10-10 10:16:00,backup,192.168.1.10,failure,FILE01,login
+2026-10-10 10:17:00,backup,192.168.1.10,success,FILE01,login
+2026-10-10 10:20:00,carlos,192.168.1.21,success,WS-02,login
+2026-10-10 10:21:00,admin,203.0.113.50,failure,DC01,login
+2026-10-10 10:22:00,maria,192.168.1.20,success,WS-01,login
